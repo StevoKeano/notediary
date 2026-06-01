@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [DiaryEntry::class, DiaryEntryFts::class],
-    version = 1,
+    entities = [DiaryEntry::class, DiaryEntryFts::class, DiaryImage::class],
+    version = 2,
     exportSchema = false
 )
 abstract class DiaryDatabase : RoomDatabase() {
@@ -23,7 +23,7 @@ abstract class DiaryDatabase : RoomDatabase() {
                     context.applicationContext,
                     DiaryDatabase::class.java,
                     "notediary.db"
-                ).build()
+                ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 instance
             }

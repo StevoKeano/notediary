@@ -32,4 +32,16 @@ interface DiaryDao {
         ORDER BY date DESC
     """)
     fun search(query: String): Flow<List<DiaryEntry>>
+
+    @Insert
+    suspend fun insertImage(image: DiaryImage): Long
+
+    @Delete
+    suspend fun deleteImage(image: DiaryImage)
+
+    @Query("SELECT * FROM diary_images WHERE entryId = :entryId ORDER BY sortOrder")
+    suspend fun getImagesForEntry(entryId: Long): List<DiaryImage>
+
+    @Query("SELECT * FROM diary_images WHERE entryId = :entryId ORDER BY sortOrder")
+    fun getImagesForEntryFlow(entryId: Long): Flow<List<DiaryImage>>
 }

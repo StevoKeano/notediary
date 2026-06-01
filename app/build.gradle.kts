@@ -62,5 +62,8 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     kapt("androidx.room:room-compiler:$roomVersion")
 
+    // Image loading
+    implementation("io.coil-kt:coil-compose:2.5.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
