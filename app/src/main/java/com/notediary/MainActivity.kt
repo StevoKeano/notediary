@@ -393,16 +393,21 @@ fun DateField(date: String, onDateChanged: (String) -> Unit) {
     var showDatePicker by remember { mutableStateOf(false) }
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
-    OutlinedTextField(
-        value = date,
-        onValueChange = {},
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { showDatePicker = true },
-        label = { Text("Date") },
-        readOnly = true,
-        singleLine = true
-    )
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = date,
+            onValueChange = {},
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Date") },
+            readOnly = true,
+            singleLine = true
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clickable { showDatePicker = true }
+        )
+    }
 
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(
