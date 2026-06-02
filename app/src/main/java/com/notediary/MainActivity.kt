@@ -83,9 +83,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 class DiaryViewModel(application: Application, private val dao: DiaryDao) : AndroidViewModel(application) {
     private val _searchQuery = MutableStateFlow("")
@@ -391,7 +391,6 @@ fun DiaryApp(dao: DiaryDao) {
 @Composable
 fun DateField(date: String, onDateChanged: (String) -> Unit) {
     var showDatePicker by remember { mutableStateOf(false) }
-    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
@@ -410,17 +409,22 @@ fun DateField(date: String, onDateChanged: (String) -> Unit) {
     }
 
     if (showDatePicker) {
+        val initialMillis = try {
+            java.time.LocalDate.parse(date).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        } catch (_: Exception) { null }
         val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = try {
-                sdf.parse(date)?.time
-            } catch (_: Exception) { null }
+            initialSelectedDateMillis = initialMillis
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let { millis ->
-                        onDateChanged(SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis)))
+                        val text = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneOffset.UTC)
+                            .toLocalDate()
+                            .toString()
+                        onDateChanged(text)
                     }
                     showDatePicker = false
                 }) { Text("OK") }
@@ -549,6 +553,5 @@ fun EntryCard(entry: DiaryEntry, onClick: () -> Unit, onDelete: () -> Unit) {
 }
 
 private fun getToday(): String {
-    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    return sdf.format(Date())
+    return java.time.LocalDate.now().toString()
 }
