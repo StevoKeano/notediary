@@ -34,7 +34,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -338,7 +337,7 @@ fun DiaryApp(dao: DiaryDao) {
                 OutlinedButton(
                     onClick = { showImagePicker = true }
                 ) {
-                    Icon(Icons.Default.Image, contentDescription = null)
+                    Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Photo")
                 }
@@ -484,7 +483,7 @@ fun ImagePickerDialog(
                     onClick = onPickFromGallery,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.Image, contentDescription = null)
+                    Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Choose from Gallery")
                 }
