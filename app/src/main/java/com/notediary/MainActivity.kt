@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -290,23 +291,22 @@ fun DiaryApp(dao: DiaryDao) {
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
         ) {
-            DateField(date = date, onDateChanged = { date = it })
-
             Spacer(modifier = Modifier.height(8.dp))
-
+            DateField(date = date, onDateChanged = { date = it })
+            Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = content,
                 onValueChange = { content = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 150.dp),
+                    .heightIn(min = 120.dp),
                 placeholder = { Text("Write your diary entry...") },
                 maxLines = 20
             )
-
             if (images.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 ImageGallery(
@@ -314,9 +314,7 @@ fun DiaryApp(dao: DiaryDao) {
                     onDelete = { viewModel.removeImage(it) }
                 )
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -333,7 +331,6 @@ fun DiaryApp(dao: DiaryDao) {
                 ) {
                     Text(if (isEditing) "Update" else "Save")
                 }
-
                 OutlinedButton(
                     onClick = { showImagePicker = true }
                 ) {
@@ -342,30 +339,32 @@ fun DiaryApp(dao: DiaryDao) {
                     Text("Photo")
                 }
             }
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         HorizontalDivider()
 
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { viewModel.setSearchQuery(it) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            placeholder = { Text("Search entries by any word...") },
-            singleLine = true
-        )
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
-        ) {
-            items(entries, key = { it.id }) { entry ->
-                EntryCard(
-                    entry = entry,
-                    onClick = { loadEntry(entry) },
-                    onDelete = { viewModel.deleteEntry(entry) }
-                )
+        Column(modifier = Modifier.weight(1f)) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.setSearchQuery(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                placeholder = { Text("Search entries by any word...") },
+                singleLine = true
+            )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+            ) {
+                items(entries, key = { it.id }) { entry ->
+                    EntryCard(
+                        entry = entry,
+                        onClick = { loadEntry(entry) },
+                        onDelete = { viewModel.deleteEntry(entry) }
+                    )
+                }
             }
         }
     }
