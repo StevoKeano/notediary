@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -70,6 +71,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -223,6 +226,11 @@ fun DiaryApp(dao: DiaryDao) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var entryToDelete by remember { mutableStateOf<DiaryEntry?>(null) }
 
+    var showAttachmentDeleteConfirm by remember { mutableStateOf(false) }
+    var attachmentToDelete by remember { mutableStateOf<DiaryImage?>(null) }
+
+    var previewImage by remember { mutableStateOf<DiaryImage?>(null) }
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -279,57 +287,70 @@ fun DiaryApp(dao: DiaryDao) {
             }
         )
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-            Spacer(modifier = Modifier.height(8.dp))
-            DateField(date = date, onDateChanged = { date = it })
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = content,
-                onValueChange = { content = it },
+        Column(modifier = Modifier.weight(1f)) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 120.dp),
-                placeholder = { Text("Write your diary entry...") },
-                maxLines = 20
-            )
-            if (images.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                AttachmentGallery(
-                    images = images,
-                    onDelete = { viewModel.removeImage(it) }
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
             ) {
-                Button(
-                    onClick = {
-                        if (content.isNotBlank()) {
-                            viewModel.saveEntry(selectedEntryId, date, content)
-                            resetForm()
+                Spacer(modifier = Modifier.height(8.dp))
+                DateField(date = date, onDateChanged = { date = it })
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    placeholder = { Text("Write your diary entry...") },
+                    maxLines = 20
+                )
+                if (images.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AttachmentGallery(
+                        images = images,
+                        onClick = { previewImage = it },
+                        onDelete = {
+                            attachmentToDelete = it
+                            showAttachmentDeleteConfirm = true
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                    enabled = content.isNotBlank()
-                ) {
-                    Text(if (isEditing) "Update" else "Save")
+                    )
                 }
-                OutlinedButton(
-                    onClick = { filePickerLauncher.launch(arrayOf("*/*")) }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            Surface(
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Attach")
+                    Button(
+                        onClick = {
+                            if (content.isNotBlank()) {
+                                viewModel.saveEntry(selectedEntryId, date, content)
+                                resetForm()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = content.isNotBlank()
+                    ) {
+                        Text(if (isEditing) "Update" else "Save")
+                    }
+                    OutlinedButton(
+                        onClick = { filePickerLauncher.launch(arrayOf("*/*")) }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Attach")
+                    }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
         }
 
         HorizontalDivider()
@@ -378,6 +399,35 @@ fun DiaryApp(dao: DiaryDao) {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
             }
         )
+    }
+
+    if (showAttachmentDeleteConfirm && attachmentToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showAttachmentDeleteConfirm = false },
+            title = { Text("Remove Attachment") },
+            text = { Text("Remove this attachment permanently?") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.removeImage(attachmentToDelete!!)
+                    showAttachmentDeleteConfirm = false
+                    attachmentToDelete = null
+                }) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAttachmentDeleteConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    previewImage?.let { image ->
+        if (image.mimeType.startsWith("image/")) {
+            ImagePreviewDialog(
+                image = image,
+                onDismiss = { previewImage = null }
+            )
+        } else {
+            previewImage = null
+        }
     }
 }
 
@@ -433,7 +483,11 @@ fun DateField(date: String, onDateChanged: (String) -> Unit) {
 }
 
 @Composable
-fun AttachmentGallery(images: List<DiaryImage>, onDelete: (DiaryImage) -> Unit) {
+fun AttachmentGallery(
+    images: List<DiaryImage>,
+    onClick: (DiaryImage) -> Unit,
+    onDelete: (DiaryImage) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -448,7 +502,8 @@ fun AttachmentGallery(images: List<DiaryImage>, onDelete: (DiaryImage) -> Unit) 
                         contentDescription = "Attachment",
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(8.dp)),
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onClick(image) },
                         contentScale = ContentScale.Crop
                     )
                 } else {
@@ -456,7 +511,8 @@ fun AttachmentGallery(images: List<DiaryImage>, onDelete: (DiaryImage) -> Unit) 
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { onClick(image) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
@@ -491,6 +547,40 @@ fun AttachmentGallery(images: List<DiaryImage>, onDelete: (DiaryImage) -> Unit) 
                         modifier = Modifier.size(16.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun ImagePreviewDialog(image: DiaryImage, onDismiss: () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .clickable(onClick = onDismiss)
+        ) {
+            AsyncImage(
+                model = File(image.imagePath),
+                contentDescription = "Preview",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentScale = ContentScale.Fit
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd)
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Close",
+                    tint = Color.White
+                )
             }
         }
     }
