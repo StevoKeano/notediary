@@ -3,6 +3,7 @@ package com.notediary
 import android.app.Application
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -32,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -63,7 +65,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -72,11 +73,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -230,6 +231,7 @@ fun DiaryApp(dao: DiaryDao) {
     var attachmentToDelete by remember { mutableStateOf<DiaryImage?>(null) }
 
     var previewImage by remember { mutableStateOf<DiaryImage?>(null) }
+    var entryIdsWithAttachments by remember { mutableStateOf(emptySet<Long>()) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -263,6 +265,12 @@ fun DiaryApp(dao: DiaryDao) {
             viewModel.getImagesForEntry(selectedEntryId!!).collect { images = it }
         } else {
             images = emptyList()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        dao.getEntryIdsWithAttachments().collect { ids ->
+            entryIdsWithAttachments = ids.toSet()
         }
     }
 
@@ -372,6 +380,7 @@ fun DiaryApp(dao: DiaryDao) {
                 items(entries, key = { it.id }) { entry ->
                     EntryCard(
                         entry = entry,
+                        hasAttachments = entry.id in entryIdsWithAttachments,
                         onClick = { loadEntry(entry) },
                         onDelete = {
                             entryToDelete = entry
@@ -420,14 +429,16 @@ fun DiaryApp(dao: DiaryDao) {
     }
 
     previewImage?.let { image ->
-        if (image.mimeType.startsWith("image/")) {
-            ImagePreviewDialog(
-                image = image,
-                onDismiss = { previewImage = null }
-            )
-        } else {
-            previewImage = null
+        val file = File(image.imagePath)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, image.mimeType)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+        }
+        previewImage = null
     }
 }
 
@@ -553,41 +564,7 @@ fun AttachmentGallery(
 }
 
 @Composable
-fun ImagePreviewDialog(image: DiaryImage, onDismiss: () -> Unit) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .clickable(onClick = onDismiss)
-        ) {
-            AsyncImage(
-                model = File(image.imagePath),
-                contentDescription = "Preview",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentScale = ContentScale.Fit
-            )
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.align(Alignment.TopEnd)
-            ) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Close",
-                    tint = Color.White
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun EntryCard(entry: DiaryEntry, onClick: () -> Unit, onDelete: () -> Unit) {
+fun EntryCard(entry: DiaryEntry, hasAttachments: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -603,12 +580,23 @@ fun EntryCard(entry: DiaryEntry, onClick: () -> Unit, onDelete: () -> Unit) {
             verticalAlignment = Alignment.Top
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = entry.date,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = entry.date,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (hasAttachments) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            Icons.Default.AttachFile,
+                            contentDescription = "Has attachments",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = entry.content,

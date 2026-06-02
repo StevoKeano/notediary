@@ -33,6 +33,9 @@ interface DiaryDao {
     """)
     fun search(query: String): Flow<List<DiaryEntry>>
 
+    @Query("SELECT DISTINCT entryId FROM diary_images")
+    fun getEntryIdsWithAttachments(): Flow<List<Long>>
+
     @Insert
     suspend fun insertImage(image: DiaryImage): Long
 
