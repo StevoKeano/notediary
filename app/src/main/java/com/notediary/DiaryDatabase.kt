@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [DiaryEntry::class, DiaryEntryFts::class, DiaryImage::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class DiaryDatabase : RoomDatabase() {
@@ -31,6 +31,12 @@ abstract class DiaryDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `diary_images` ADD COLUMN `mimeType` TEXT NOT NULL DEFAULT 'application/octet-stream'")
+            }
+        }
+
         @Volatile
         private var INSTANCE: DiaryDatabase? = null
 
@@ -40,7 +46,7 @@ abstract class DiaryDatabase : RoomDatabase() {
                     context.applicationContext,
                     DiaryDatabase::class.java,
                     "notediary.db"
-                ).addMigrations(MIGRATION_1_2).build()
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
                 INSTANCE = instance
                 instance
             }

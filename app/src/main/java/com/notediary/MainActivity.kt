@@ -8,12 +8,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,10 +29,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -56,7 +56,6 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,7 +86,6 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.time.Instant
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 
 class DiaryViewModel(application: Application, private val dao: DiaryDao) : AndroidViewModel(application) {
     private val _searchQuery = MutableStateFlow("")
@@ -121,6 +120,18 @@ class DiaryViewModel(application: Application, private val dao: DiaryDao) : Andr
         }
     }
 
+    fun ensureEntryExists(entryId: Long?, date: String, content: String, onResult: (Long) -> Unit) {
+        if (entryId != null && entryId != 0L) {
+            onResult(entryId)
+        } else if (content.isNotBlank()) {
+            viewModelScope.launch {
+                val newId = dao.insert(DiaryEntry(date = date, content = content.trim()))
+                _newEntryId.value = newId
+                onResult(newId)
+            }
+        }
+    }
+
     fun deleteEntry(entry: DiaryEntry) {
         viewModelScope.launch {
             val images = dao.getImagesForEntry(entry.id)
@@ -133,42 +144,12 @@ class DiaryViewModel(application: Application, private val dao: DiaryDao) : Andr
         _searchQuery.value = query
     }
 
-    fun saveAndPickImage(entryId: Long?, date: String, content: String, launchPicker: () -> Unit) {
+    fun addAttachment(entryId: Long, uri: Uri) {
         viewModelScope.launch {
-            if (entryId != null && entryId != 0L) {
-                launchPicker()
-            } else if (content.isNotBlank()) {
-                val id = dao.insert(DiaryEntry(date = date, content = content.trim()))
-                _newEntryId.value = id
-                launchPicker()
-            }
-        }
-    }
-
-    fun saveAndPasteFromClipboard(entryId: Long?, date: String, content: String) {
-        viewModelScope.launch {
-            var eid = entryId
-            if ((eid == null || eid == 0L) && content.isNotBlank()) {
-                eid = dao.insert(DiaryEntry(date = date, content = content.trim()))
-                _newEntryId.value = eid
-            }
-            if (eid != null && eid != 0L) {
-                val context = getApplication<Application>()
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = clipboard.primaryClip ?: return@launch
-                for (i in 0 until clip.itemCount) {
-                    val uri = clip.getItemAt(i).uri ?: continue
-                    val path = saveImageToInternalStorage(uri) ?: continue
-                    dao.insertImage(DiaryImage(entryId = eid, imagePath = path))
-                }
-            }
-        }
-    }
-
-    fun addImage(entryId: Long, uri: Uri) {
-        viewModelScope.launch {
-            val path = saveImageToInternalStorage(uri) ?: return@launch
-            dao.insertImage(DiaryImage(entryId = entryId, imagePath = path))
+            val context = getApplication<Application>()
+            val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+            val path = saveFileToInternalStorage(uri, mimeType) ?: return@launch
+            dao.insertImage(DiaryImage(entryId = entryId, imagePath = path, mimeType = mimeType))
         }
     }
 
@@ -181,11 +162,15 @@ class DiaryViewModel(application: Application, private val dao: DiaryDao) : Andr
 
     fun getImagesForEntry(entryId: Long) = dao.getImagesForEntryFlow(entryId)
 
-    private fun saveImageToInternalStorage(uri: Uri): String? {
+    private fun saveFileToInternalStorage(uri: Uri, mimeType: String): String? {
         val context = getApplication<Application>()
         val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-        val dir = File(context.filesDir, "images").also { it.mkdirs() }
-        val file = File(dir, "img_${System.currentTimeMillis()}_${(0..9999).random()}.jpg")
+        val ext = when {
+            mimeType.startsWith("image/") -> mimeType.substringAfterLast("/", "jpg")
+            else -> "bin"
+        }
+        val dir = File(context.filesDir, "attachments").also { it.mkdirs() }
+        val file = File(dir, "file_${System.currentTimeMillis()}_${(0..9999).random()}.$ext")
         file.outputStream().use { output -> inputStream.copyTo(output) }
         return file.absolutePath
     }
@@ -234,14 +219,19 @@ fun DiaryApp(dao: DiaryDao) {
     var content by remember { mutableStateOf("") }
     var isEditing by remember { mutableStateOf(false) }
     var images by remember { mutableStateOf<List<DiaryImage>>(emptyList()) }
-    var showImagePicker by remember { mutableStateOf(false) }
 
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var entryToDelete by remember { mutableStateOf<DiaryEntry?>(null) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            val entryId = selectedEntryId
-            if (entryId != null) viewModel.addImage(entryId, it)
+            viewModel.ensureEntryExists(selectedEntryId, date, content) { entryId ->
+                selectedEntryId = entryId
+                isEditing = true
+                viewModel.addAttachment(entryId, it)
+            }
         }
     }
 
@@ -309,7 +299,7 @@ fun DiaryApp(dao: DiaryDao) {
             )
             if (images.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                ImageGallery(
+                AttachmentGallery(
                     images = images,
                     onDelete = { viewModel.removeImage(it) }
                 )
@@ -332,11 +322,11 @@ fun DiaryApp(dao: DiaryDao) {
                     Text(if (isEditing) "Update" else "Save")
                 }
                 OutlinedButton(
-                    onClick = { showImagePicker = true }
+                    onClick = { filePickerLauncher.launch(arrayOf("*/*")) }
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Photo")
+                    Text("Attach")
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -362,25 +352,30 @@ fun DiaryApp(dao: DiaryDao) {
                     EntryCard(
                         entry = entry,
                         onClick = { loadEntry(entry) },
-                        onDelete = { viewModel.deleteEntry(entry) }
+                        onDelete = {
+                            entryToDelete = entry
+                            showDeleteConfirm = true
+                        }
                     )
                 }
             }
         }
     }
 
-    if (showImagePicker) {
-        ImagePickerDialog(
-            onDismiss = { showImagePicker = false },
-            onPickFromGallery = {
-                showImagePicker = false
-                viewModel.saveAndPickImage(selectedEntryId, date, content) {
-                    launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }
+    if (showDeleteConfirm && entryToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Entry") },
+            text = { Text("Delete this entry permanently? This cannot be undone.") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.deleteEntry(entryToDelete!!)
+                    showDeleteConfirm = false
+                    entryToDelete = null
+                }) { Text("Delete") }
             },
-            onPasteFromClipboard = {
-                showImagePicker = false
-                viewModel.saveAndPasteFromClipboard(selectedEntryId, date, content)
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
             }
         )
     }
@@ -438,7 +433,7 @@ fun DateField(date: String, onDateChanged: (String) -> Unit) {
 }
 
 @Composable
-fun ImageGallery(images: List<DiaryImage>, onDelete: (DiaryImage) -> Unit) {
+fun AttachmentGallery(images: List<DiaryImage>, onDelete: (DiaryImage) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -447,14 +442,39 @@ fun ImageGallery(images: List<DiaryImage>, onDelete: (DiaryImage) -> Unit) {
     ) {
         images.forEach { image ->
             Box(modifier = Modifier.size(100.dp)) {
-                AsyncImage(
-                    model = File(image.imagePath),
-                    contentDescription = "Photo",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
+                if (image.mimeType.startsWith("image/")) {
+                    AsyncImage(
+                        model = File(image.imagePath),
+                        contentDescription = "Attachment",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Description,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Text(
+                            text = image.imagePath.substringAfterLast("/").substringBeforeLast("."),
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
+                }
                 IconButton(
                     onClick = { onDelete(image) },
                     modifier = Modifier
@@ -467,47 +487,13 @@ fun ImageGallery(images: List<DiaryImage>, onDelete: (DiaryImage) -> Unit) {
                 ) {
                     Icon(
                         Icons.Default.Close,
-                        contentDescription = "Remove photo",
+                        contentDescription = "Remove",
                         modifier = Modifier.size(16.dp)
                     )
                 }
             }
         }
     }
-}
-
-@Composable
-fun ImagePickerDialog(
-    onDismiss: () -> Unit,
-    onPickFromGallery: () -> Unit,
-    onPasteFromClipboard: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add Photo") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onPickFromGallery,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Choose from Gallery")
-                }
-                OutlinedButton(
-                    onClick = onPasteFromClipboard,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Paste from Clipboard")
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
 }
 
 @Composable
